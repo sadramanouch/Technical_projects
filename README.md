@@ -1,341 +1,432 @@
-## Assignment 2: An Undoable List
- 
-> The undoing is always more difficult than the doing. -- *Kate DiCamillo*
+## Assignment 3: JingleNet
 
-In this assignment, your task is to add an *undo* feature to a list of strings.
+> JingleNet has sprinkled a touch of magic into our communication at the North
+> Pole, making it as smooth as freshly fallen snow. -- Santa Claus
 
-To start, here's a working class called [Stringlist](Stringlist.h) that
-implements a simple string list. [Stringlist_test.cpp](Stringlist_test.cpp) has
-tests for all the methods in [Stringlist](Stringlist.h).
+At the North Pole, Santa and his elves use the **JingleNet announcement system**
+to to play announcements over the North Pole loud speakers for all to hear.
 
-`Stringlist` has one unimplemented method:
+Your task is to write a program named [a3.cpp](a3.cpp) that processes a sequence
+of JingleNet commands, and outputs the resulting announcements in the proper
+order.
 
-```cpp
-  //
-  // Undoes the last operation that modified the list. Returns true if a
-  // change was undone, false otherwise.
-  //
-  bool undo()
-  {
-      cout << "Stringlist::undo: not yet implemented\n";
-      return false;
-  }
+For example, here is are the JingleNet commands in
+[jinglenet_input1.txt](jinglenet_input1.txt):
+
+```
+SEND greenie elf2 send candy canes
+ANNOUNCE 1
+SEND yumyum elf2 I love candy canes!
+ANNOUNCE 2
 ```
 
-Your job is to implement `undo`, thus making `Stringlist` an *undoable* list.
+`SEND` puts an announcement into the JingleNet queue system, and `ANNOUNCE n`
+prints the next `n` announcements to `announcements.txt`. To run the program on
+this input you would type:
 
-Your implementation must follow these rules:
-
-- Do **not** delete any methods, or change the *signatures* of any methods in
-  [Stringlist](Stringlist.h). You **can** change the *implementation* of
-  existing methods if necessary. But they should still work the same way.**Your
-  finished version of `Stringlist` with `undo` implement must still pass all the
-  tests in [Stringlist_test.cpp](Stringlist_test.cpp)**.
-- You **can** add other helper methods (public or private), functions, and
-  classes/structs to [Stringlist.h](Stringlist.h) if you need them.
-- You **must** implement `undo()` using a *private stack* that is accessible
-  only inside the `Stringlist` class. **Implement the stack yourself as a linked
-  list**. Do **not** use arrays, vectors, or any other data structure for your
-  stack.
-- Do **not** use any other #includes or #pragmas in [Stringlist.h](Stringlist.h)
-  other than the ones already there.
-
-When it's done, you'll be able to write code like this:
-
-```cpp
-#include "Stringlist.h"
-#include <iostream>
-
-using namespace std;
-
-int main() {
-    Stringlist lst;
-    cout << lst << endl; // {}
-
-    lst.add("one");
-    lst.add("two");
-    lst.add("three");
-    cout << lst << endl; // {"one", "two", "three"}
-
-    lst.undo();
-    cout << lst << endl; // {"one", "two"}
-
-    lst.undo();
-    cout << lst << endl; // {"one"}
-
-    lst.undo();
-    cout << lst << endl; // {}
-}
+```
+> ./a3 jinglenet_input1.txt
+2 announcements written to announcements.txt
 ```
 
-## Getting Started with `StringList`
+And the contents of `announcements.txt` is:
 
-To start, [download all the files for this
-assignment](https://github.com/tjd1234/cmpt225summer2023/tree/main/assignments/a2)
-to your computer, and then compile and run
-[Stringlist_test.cpp](Stringlist_test.cpp) to make sure it runs without error:
-
-```bash
-> make Stringlist_test
-g++ -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virtual-dtor -g Stringlist_test.cpp -o Stringlist_test
-
-> valgrind ./Stringlist_test
-... test output ...
+```
+1: {greenie, elf2, "send candy canes"}
+2: {yumyum, elf2, "I love candy canes!"}
 ```
 
-Running your program with `valgrind` is important, since it will help you find
-memory leaks, and other memory-related errors.
+The details of all the commands and how they work are given below.
 
-> **Note** There should be *no* errors when you run this testing! If you have
-> any, double-check that you are running exactly the correct file, and using the
-> correct compiler version, correct options, and correct [makefile](makefile).
 
-## Designing the Undo Stack
+## JingleNet Architecture
 
-As mentioned above, you must implement `undo()` using at least one *private
-stack* implemented as a linked list inside the `Stringlist` class. You can
-modify `Stringlist` only as described at the start of this assignment.
+The JingleNet system is essentially a large queue consisting of 5 internal
+queues:
 
-One idea for how undo can work is that every time `Stringlist` is modified by
-one of its methods, it *pushes* the *inverse* operation on the top of an undo
-stack. When `undo()` is called, it *pops* the top of the stack and applies that
-operation to the list thus undoing the most recent operation.
+![JingleNet Architecture](JingleNetArchitecture.png)
 
-**Important** All the methods in [Stringlist](Stringlist.h) marked "undoable"
-should work with `undo()`. `undo()` cannot be undone: there is no "re-do"
-feature in this assignment.
+When an announcement is added to JingleNet it is placed in the queue for its
+**rank**. Every announcement has one of these 5 ranks:
 
-Here are some examples of how specific methods should work.
+- **santa**: the highest rank
+- **reindeer**: the second highest rank
+- **elf2**: the third highest rank
+- **elf1**: the fourth highest rank
+- **snowman**: the lowest rank
 
-### Undoing `insert_before`
+Ranks are per-announcement. There could be announcements from the same user in
+different queues at the same time.
 
-Suppose `lst` is `{"dog", "cat", "tree"}`, and you call `lst.insert_before(3,
-"hat")`. It should push the operation *remove string at index 3* on the undo
-stack. You could store it as a short `string` command, e.g. `REMOVE 3`. If you
-now call `lst.undo()`, the `REMOVE 3` command on top of the stack is popped and
-applied to the list, e.g. the string at index 3 is removed, leaving the list in
-the state it was in before calling `insert_before`: `{"dog", "cat", "tree"}`.
+Here's a textual representation of the queues when they are empty:
 
-In code:
-
-```cpp
-// lst == {"dog", "cat", "tree"}
-
-lst.insert_before(3, "hat");
-// lst == {"dog", "cat", "tree", "hat"}
-
-lst.undo();
-// lst == {"dog", "cat", "tree"}
-
-lst.insert_before(1, "shoe");
-// lst == {"dog", "shoe", "cat", "tree"}
-
-lst.undo();
-// lst == {"dog", "cat", "tree"}
+```
+(left is front of queue, right is back of queue)
+   santa: []
+reindeer: []
+    elf2: []
+    elf1: []
+ snowman: []
 ```
 
-### Undoing `set`
+And here's what they look like with a total of 5 announcements in the system:
 
-For `set`, suppose that `lst` is `{"yellow", "green", "red", "orange"}`, and so
-`lst.get(2)` returns `"red"`. If you call `lst.set(2, "cow")`, then you should
-push the operation *set location 2 to `"red"`* onto the undo stack, and then
-over-write location 2 with `"cow"`. You could format the operation like `"SET 2
-red"`. Calling `lst.undo()` pops the top command of the stack and applies it to
-the list, e.g. the string at index 2 is set to `"red"` and the list is in the
-state it was in before calling `set`: `{"yellow", "green", "red", "orange"}`.
-
-In code:
-
-```cpp
-// lst == {"yellow", "green", "red", "orange"}
-
-lst.set(2, "cow");
-// lst == {"yellow", "green", "cow", "orange"}
-
-lst.undo();
-// lst == {"yellow", "green", "red", "orange"}
+```
+(left is front of queue, right is back of queue)
+   santa: [{yumyum, santa, "I love Christmas!"}, {lili, santa, "Hi!!"}]
+reindeer: [{yumyum, reindeer, "mmm, peppermint"}]
+    elf2: []
+    elf1: []
+ snowman: [{choco, snowman, "choco4ever"}, {yumyum, snowman, "I'm hungry!"}]
 ```
 
-### Undoing `remove_at`
+As noted, the left-most item is at the *front* of each queue, and the right-most
+item is at the *back*. So items are enqueued at the right end and de-queued at
+the left.
 
-For `remove_at`, suppose `lst` is `{"dog", "cat", "tree"}`. If you call
-`lst.remove_at(1)`, then you should push the operation *insert `"cat"` at index
-1* onto the stack, and then remove the string at index 1. You could format the
-operation as `"INSERT 1 cat"`. If you now call `lst.undo()`, the command on top
-of the stack is popped and applied to the list, e.g. the string `"cat"` is
-inserted at index 1, and the list is in the state it was in before calling
-`remove_at`: `{"dog", "cat", "tree"}`.
+## JingleNet Commands
 
-In code:
+JingleNet is controlled by these 4 commands:
 
-```cpp
-// lst == {"dog", "cat", "tree"}
+- **SEND** *username* *rank* *message*: *username* sends an announcement of rank
+  *rank* with text *message*
+- **REMOVE_ALL** *username*: all announcements from *username* are removed from
+  the JingleNet system
+- **PROMOTE_ANNOUNCEMENTS** *username*: all announcements from *username* are
+  moved to the next highest rank
+- **ANNOUNCE** *n*: the next *n* announcements are printed to
+  `announcements.txt`
 
-lst.remove_at(1);
-// lst == {"dog", "tree"}
+The `Announcement` class is in [Announcement.h](Announcement.h). `Announcement`
+objects are *immutable*, i.e. once created they cannot be changed. Here are
+three different ways to create the same announcement (see
+[announcement_demo.cpp](announcement_demo.cpp)):
 
-lst.undo();
-// lst == {"dog", "cat", "tree"}
+```c++
+Announcement a1("yumyum", Rank::SANTA, "I love Christmas!");
+cout << a1 << endl; // prints: {yumyum, santa, "I love Christmas!"}
+
+// copy another Announcement
+Announcement a2(a1);
+cout << a2 << endl; // prints: {yumyum, santa, "I love Christmas!"}
+
+// parse a string of the form "sender_name rank text"
+Announcement a3("yumyum santa I love Christmas!");
+cout << a3 << endl; // prints: {yumyum, santa, "I love Christmas!"}
 ```
 
+### Sending Announcements
 
-### Undoing `operator=`
+**SEND** *username* *rank* *message*
 
-For `operator=`, suppose `lst1` is `{"dog", "cat", "tree"}`, and `lst2` is
-`{"yellow", "green", "red", "orange"}`. If you call `lst1 = lst2;`, then you
-should push the command *set `lst1` to `{"dog", "cat", "tree"}`* onto the stack,
-and then assign `lst1` to `lst2`. You could format the command as `"SET lst1 dog
-cat tree"`. Calling `lst1.undo()` pops the command on top of the stack and
-applies it to the list, e.g. `lst1` is set to `{"dog", "cat", "tree"}` and the
-list is in the state it was in before calling `operator=`: `{"dog", "cat",
-"tree"}`.
+This adds an announcement from *username* of rank *rank* with text *message* to
+the JingleNet system.
 
-In code:
+For example, suppose the JingleNet queues look like this:
 
-```cpp
-// lst1 == {"dog", "cat", "tree"}
-// lst2 == {"yellow", "green", "red", "orange"}
-
-lst1 = lst2;
-// lst1 == {"yellow", "green", "red", "orange"}
-// lst2 == {"yellow", "green", "red", "orange"}
-
-lst1.undo();
-// lst1 == {"dog", "cat", "tree"}
-// lst2 == {"yellow", "green", "red", "orange"}
+```
+(left is front of queue, right is back of queue)
+   santa: [{yumyum, santa, "I love Christmas!"}, {lili, santa, "Hi!!"}]
+reindeer: [{yumyum, reindeer, "mmm, peppermint"}]
+    elf2: []
+    elf1: []
+ snowman: [{choco, snowman, "choco4ever"}, {yumyum, snowman, "I'm hungry!"}]
 ```
 
-As this shows, when you undo `operator=`, the *entire* list of strings is
-restored in one call to `undo()`. 
+Then after this command:
 
-**Important** notes:
-
-- If `lst1` and `lst2` are different objects, then when `lst2` is assigned to
-  `lst1` just the underlying string array of `lst2` is copied to `lst1`. The
-  `lst1` undo stack is updated so that it can undo the assignment. The undo
-  stack of `lst2` is *not* copied, and `lst2` is not modified in any away.
-
-- *Self-assignment* is when you assign a list to itself, e.g. `lst1 = lst1;`. In
-  this case, *nothing* happens to `lst1`. Both its string data and undo stack
-  are left as-is.
-
-### Undoing `remove_all`
-
-For `remove_all`, suppose `lst` is `{"dog", "cat", "tree"}`. If you call
-`lst.remove_all()`, then you should push the operation *set `lst1` to `{"dog",
-"cat", "tree"}`* onto the stack, and then remove all the strings from `lst`
-(i.e. its size is 0). You could format the command as `"SET lst1 dog cat tree"`.
-Calling `lst1.undo()` pops the command on top of the stack and applies it to the
-list, e.g. `lst` is set to `{"dog", "cat", "tree"}` and the list is in the state
-it was in before calling `remove_all`: `{"dog", "cat", "tree"}`.
-
-In code:
-
-```cpp
-// lst == {"dog", "cat", "tree"}
-
-lst.remove_all();
-// lst == {}
-
-lst.undo();
-// lst == {"dog", "cat", "tree"}
+```
+SEND yumyum Snowman yaaay!
 ```
 
-Note that it should work the same way when `lst` is empty:
+The queues look like this:
 
-```cpp  
-// lst == {}
-
-lst.remove_all();
-// lst == {}
-
-lst.undo();
-// lst == {}
+```
+(left is front of queue, right is back of queue)
+   santa: [{yumyum, santa, "I love Christmas!"}, {lili, santa, "Hi!!"}]
+reindeer: [{yumyum, reindeer, "mmm, peppermint"}]
+    elf2: []
+    elf1: []
+ snowman: [{choco, snowman, "choco4ever"}, {yumyum, snowman, "I'm hungry!"}, 
+           {yumyum, snowman, "yaaay!"}]
 ```
 
-### Undoing Other Methods
+### Removing Announcements
 
-`undo()` should undo all the other methods in [Stringlist](Stringlist.h) that
-are marked as "undoable" in the source code comments.
+**REMOVE_ALL** *username*
 
-As mentioned above, `undo()` is *not* undoable. There is no "re-do" feature in
-this assignment.
+This removes all announcements from *username*, whatever queue(s) they are in.
+If there are no announcements from *username*, then nothing happens.
 
+For example, suppose the JingleNet queues look like this:
 
-### Testing Your Code
-
-It's important to test your code as you go. In [a2_test.cpp](a2_test.cpp), write
-code to test your `Stringlist` undo method. Compiile and run it like this:
-  
-```bash 
-❯ make a2_test
-g++  -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virtual-dtor -g   a2_test.cpp   -o a2_test
-
-> ./a2_test
-... testing output ...
+```
+(left is front of queue, right is back of queue)
+   santa: [{lili, santa, "Hi!!"}, {yumyum, santa, "I love Christmas!"}]
+reindeer: []
+    elf2: []
+    elf1: []
+ snowman: [{yumyum, snowman, "yaaay!"}]
 ```
 
-You should test *at least* the examples given above, plus every other function
-that can be undone. Follow the testing style in
-[Stringlist_test.cpp](Stringlist_test.cpp) and use `assert`s or `if`-statements
-to test your code.
+Then after this command:
+
+```
+REMOVE_ALL yumyum
+```
+
+The queues look like this:
+
+```
+(left is front of queue, right is back of queue)
+   santa: [{lili, santa, "Hi!!"}]
+reindeer: []
+    elf2: []
+    elf1: []
+ snowman: []
+```
+
+### Promoting Announcements
+
+**PROMOTE_ANNOUNCEMENTS** *username*
+
+This moves all announcements from *username* to the next highest queue.
+Announcements are dequeued from their current queue and then enqueued in the
+queue one rank higher. Nothing happens to announcements in the **santa** queue:
+they are already at the highest rank.
+
+When promoting announcements, start with **reindeer** queue and work downwards.
+First any announcements in the **reindeer** are promoted to the **santa** queue,
+and then any announcements in the **elf2** queue are promoted to the
+**reindeer** queue, and so on.
+
+When items are put into another queue, they are enqueued at the back in the
+usual way. If multiple announcements are promoted from a queue, then they are
+enqueued so they appear in the same order as in the queue they were promoted
+from.
+
+For example, suppose the queues look like this:
+
+```
+(left is front of queue, right is back of queue)
+   santa: [{lili, santa, "Hi!!"}, {yumyum, santa, "I love Christmas!"}]
+reindeer: [{yumyum, reindeer, "Rocking horse repair needed!"}, 
+           {rudolph, reindeer, "I'm hungry!"}]
+    elf2: []
+    elf1: []
+ snowman: [{yumyum, snowman, "yaaay!"}, {choco, snowman, "choco4ever"}, 
+           {yumyum, snowman, "I'm hungry"}]
+```
+
+Then after the command:
+
+```
+PROMOTE_ANNOUNCEMENTS yumyum
+```
+
+The queues look like this:
+
+```
+(left is front of queue, right is back of queue)
+   santa: [{lili, santa, "Hi!!"}, {yumyum, santa, "I love Christmas!"}, 
+           {yumyum, santa, "Rocking horse repair needed!"}]
+reindeer: [{rudolph, reindeer, "I'm hungry!"}]
+    elf2: []
+    elf1: [{yumyum, elf1, "yaaay!"}, {yumyum, elf1, "I'm hungry"}]
+ snowman: [{choco, snowman, "choco4ever"}]
+```
+
+### Announcing Announcements
+
+**ANNOUNCE** *n*
+
+De-queues and announces the next *n* announcements from the queues in this
+order:
+
+- All announcements in the **santa** queue, in the order they were enqueued.
+- Then all announcements in the **reindeer** queue, in the order they were
+  enqueued.
+- Then all announcements in the **elf2** queue, in the order they were enqueued.
+- Then all announcements in the **elf1** queue, in the order they were enqueued.
+- Then all announcements in the **snowman** queue, in the order they were
+  enqueued.
+
+If there are fewer then *n* announcements in the queues, then all announcements
+are removed (in the proper order). You can assume that *n* is always a positive
+integer.
+
+To announce a announcement, use `jnet.announce` from
+[JingleNet_announcer.h](JingleNet_announcer.h):
+
+```
+jnet.announce(a);  // a is an Announcement
+```
+
+The announcements are automatically printed to the file `announcements.txt` when
+the program ends. To use `jnet.announce` all you need to do is #include
+[JingleNet_announcer.h](JingleNet_announcer.h) in your program.
+
+> **Be careful!** `announcements.txt` gets over-written at the end of every
+> program that uses [JingleNet_announcer.h](JingleNet_announcer.h).
+
+Please be sure to announce announcements in this exact way using
+`jnet.announce`.
+
+Here's an example of how announcing works. Suppose the queues look like this:
+
+```
+(left is front of queue, right is back of queue)
+   santa: [{lili, santa, "Hi!!"}, {yumyum, santa, "I love Christmas!"}]
+reindeer: [{yumyum, reindeer, "Rocking horse repair needed!"}, 
+           {yumyum, reindeer, "I'm hungry!"}]
+    elf1: [{yumyum, elf1, "yaaay!"}, {yumyum, elf1, "I'm hungry"}]
+    elf2: []
+ snowman: [{choco, snowman, "choco4ever"}]
+```
+
+Then after this command:
+
+```
+ANNOUNCE 3
+```
+
+This removes the next 3 announcements from the queues. The queues then look like
+this:
+
+```
+(left is front of queue, right is back of queue)
+   santa: []
+reindeer: [{yumyum, reindeer, "I'm hungry!"}]
+    elf1: [{yumyum, elf1, "yaaay!"}, {yumyum, elf1, "I'm hungry"}]
+    elf2: []
+ snowman: [{choco, snowman, "choco4ever"}]
+```
+
+When the program ends, `announcements.txt` looks like this (assuming no other
+announcements were made):
+
+```
+1: {lili, santa, "Hi!!"}
+2: {yumyum, santa, "I love Christmas!"}
+3: {yumyum, reindeer, "Rocking horse repair needed!"}
+```
+
+## Special Requirements
+
+- Put all your code for this assignment into a single file called
+  [a3.cpp](a3.cpp). It should have a `main` function that reads the name of a
+  file and processes it like this:
+
+  ```
+  > ./a3 input1.txt
+  ...
+  ```
+
+  See [getline_demo.cpp](getline_demo.cpp) for an example of reading
+  command-line arguments and processing a file line-by-line.
+
+- Inside [a3.cpp](a3.cpp), implement your own queue class called `Queue` that
+  inherits from [Queue_base.h](Queue_base.h). Also:
+  - Your `Queue` does *not* need to be a template class, e.g. it can inherit
+    from `Queue_base<Announcement>`.
+  - For this assignment, you must implement your `Queue` using either a
+    singly-linked or doubly-linked list that you code yourself. Do **not** use
+    arrays, vectors, or other containers to implement `Queue`.
+  - Make sure that all methods meet the performance requirements listed in
+    [Queue_base.h](Queue_base.h).
+
+- Implement a class called `JingleNet` that stores the 5 queues. The details of
+  this class are up to you. Use it in a sensible way that makes your program
+  easier to understand. For instance, `JingleNet` could have a method for each
+  JingleNet command above.
+
+## Sample Runs
+
+Here are a few sample input files and their corresponding output files:
+
+- [jinglenet_input1.txt](jinglenet_input1.txt), [output1.txt](output1.txt)
+- [jinglenet_input2.txt](jinglenet_input2.txt), [output2.txt](output2.txt)
+- [jinglenet_input3.txt](jinglenet_input3.txt), [output3.txt](output3.txt)
+- [jinglenet_input4.txt](jinglenet_input4.txt), [output4.txt](output4.txt)
+- [jinglenet_input5.txt](jinglenet_input5.txt), [output5.txt](output5.txt)
+
+You can run them like this:
+
+```
+❯ ./a3 jinglenet_input1.txt
+2 announcements written to announcements.txt
+
+❯ cat announcements.txt
+1: {greenie, elf2, "send candy canes"}
+2: {yumyum, elf2, "I love candy canes!"}
+```
+
+The `diff` command is useful for comparing files:
+
+```
+❯ ./a3 jinglenet_input1.txt
+2 announcements written to announcements.txt
+
+> diff announcements.txt output1.txt
+
+```
+
+`diff` only prints differences between the files, so no output means the files
+are the same.
 
 
 ## What to Submit
 
-When you're done, submit just your [Stringlist.h](Stringlist.h) on Canvas. Don't
+When you're done, submit your finished [a3.cpp](a3.cpp) file on Canvas. Don't
 submit anything else. 
 
 ## Grading
 
 The marker will compile and run your program on Ubuntu Linux using
-[makefile](makefile) and a command like this:
+[makefile](makefile) like this:
 
 ```bash
-> make a2_test
-g++ -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virtual-dtor -g a2_test.cpp -o a2_test
+> make a3
+g++ -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virtual-dtor -g a3.cpp -o a3
 
-> ./a2_test
-... testing output ...
-
-> valgrind ./a2_test
-... valgrind output ...
-```
-
-If the marker can't compile your program, then you will get 0 marks for the
-assignment.
-
-The markers `a2_test.cpp` will contain their tests (that you have probably not
-seen before) to check the correctness of you `Stringlist`. `a2_test.cpp` will
-#include your [Stringlist.h](Stringlist.h), and it should run without needing
-any other #includes in `a2_test.cpp` (all the #includes your `Stringlist` need
-should be in your [Stringlist.h](Stringlist.h).
-
-The marker will also run your [Stringlist.h](Stringlist.h) with
-[Stringlist_test.cpp](Stringlist_test.cpp) to ensure that all the original
-`Stringlist` functionality still works:
-
-```bash
-> make Stringlist_test
-g++ -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virtual-dtor -g Stringlist_test.cpp -o Stringlist_test
-
-> ./Stringlist_test
+> valgrind ./a3 some_input_file.txt
 ... testing output ...
 ```
-
-> **Note** The compilation commands are quite strict! Make sure your program
-> compiles with them before submitting it.
 
 ## Marking Scheme
 
-- **9 marks** One mark for each method in [Stringlist.h](Stringlist.h) marked
-  "undoable" that works correctly with `undo()`. This also includes the correct
-  behaviour for the `Stringlist` copy constructor (which should not copy the
-  undo stack).
-- **5 marks** The markers tests run correctly, including with no memory leaks
-  according to `valgrind`.
-- **5 marks** `Stringlist` passes all tests in
-  [Stringlist_test.cpp](Stringlist_test.cpp).
+### The Queue Class: 10 marks
+
+- **1 mark**: [a3.cpp](a3.cpp) contains a class named `Queue` that inherits from
+  [Queue_base.h](Queue_base.h).
+- **4 marks**: All the methods in `Queue` listed in [Queue_base.h](Queue_base.h)
+  work correctly.
+- **2 marks**: All the methods in `Queue` meet the performance requirements
+  listed in [Queue_base.h](Queue_base.h).
+- **3 marks**: The `Queue` class is implemented using either a singly-linked or
+  doubly-linked list. that you coded yourself. Do **not** use arrays, vectors,
+  or other containers to implement `Queue`.
+
+### The JingleNet Class: 4 marks
+
+- **2 marks**: [a3.cpp](a3.cpp) contains a class named `JingleNet` that stores
+  the 5 queues.
+- **2 marks**: The `JingleNet` class is used in a sensible way that makes your
+  program easier to understand.
+
+### Correctness: 13 marks
+
+- **5 marks**: valgrind reports no memory leaks or other errors when the program
+  runs.
+- **5 marks**: The program produces the correct output for
+  [jinglenet_input1.txt](jinglenet_input1.txt),
+  [jinglenet_input2.txt](jinglenet_input2.txt),
+  [jinglenet_input3.txt](jinglenet_input3.txt),
+  [jinglenet_input4.txt](jinglenet_input4.txt), and
+  [jinglenet_input5.txt](jinglenet_input5.txt).
+- **3 marks**: The program produces the correct output for another input file,
+  in the same style as the `jinglenet_input` files supplied by the markers.
+
 
 ### Overall source code readability: 5 marks
 
@@ -353,20 +444,19 @@ g++ -std=c++17 -Wall -Wextra -Werror -Wfatal-errors -Wno-sign-compare -Wnon-virt
 
 ### Deductions
 
-- **-5 marks** if your program does *not* compile with the given
-  [makefile](makefile) and the `make` commands given in the assignment. **If the
-  marker can't get your program to compile at all, then you will get a score of
-  0 for the assignment**.
-- **-5 marks** if you change the name of the file or class, or if you change the
-  *signatures* of any give methods or functions. Each individual difference is
-  -5 marks.
-- **-10 marks** if you use arrays, vectors, or other containers to implement the
-  private stack in `Stringlist`. You must use a linked list to implement the
-  stack.
-- up to **-3 marks** if you do not include your full name, email, and SFU ID in
-  the header of your file.
-- **a score of 0** if you don't include the "Statement of Originality", or it is
-  modified in any way.
-- **a score of 0** if you submit a "wrong" non-working file, and then *after the
-  due date* submit the "right" file. If you can provide evidence that you
-  finished the assignment on time, then it may be marked.
+- Up to **-3 marks** if you do *not* include your full name, email, and SFU ID
+  in the header of your file.
+- Up to **-3 marks** if your submitted files don't following the
+  naming/formatting conventions given above.
+- **A score of 0** if: 
+  - your code *doesn't* compile with the given makefile
+  - valgrind reports any memory leaks, or other errors
+  - you *don't* include the "Statement of Originality", or it is modified in any
+    way
+  - use code from some other source (e.g. the web, the textbook, ChatGPT, ...)
+    *without* citing its source.
+  - submit a "wrong" non-working file, and then *after the due date* submit the
+    "right" file. If you can provide evidence that you finished the assignment
+    on time, then it may be marked.
+
+There may be other deductions, depending upon the circumstances.
